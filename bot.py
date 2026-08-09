@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GOOGLE_CX = os.environ.get("GOOGLE_CX")
+ADMIN_ID = os.environ.get("ADMIN_ID")  # معرف المسؤول لتلقي رسالة البداية
 
 if not TELEGRAM_TOKEN:
     logger.error("لم يتم العثور على متغير البيئة TELEGRAM_TOKEN. عيّن TELEGRAM_TOKEN ثم أعد التشغيل.")
@@ -70,13 +71,13 @@ async def google_search(query: str, count: int = RESULTS_PER_PAGE, start: int = 
 # ---------- أمر البوت ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التقنية؟\n\n" 
+        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التكنولوجيا\n\n"
         "يمكنك أيضاً استخدام بوت في وضع inline بكتابة @اسم_البوت <استعلام> داخل أي محادثة.")
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "الأوامر المتاحة:\n/search <query> - البحث عبر Google Custom Search وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية.\n\n" 
-        "ملاحظة: يمكنك التنقل بين الصفحات عبر أزرار التالي/السابق التي تظهر بعد البحث. وللاستخدام السلس داخل المحادثات استعمل inline: اكتب @اسم_البوت ثم الاستعلام.")
+        "ملاحظة: يمكنك التنقل بين الصفحات عبر أزرار التالي/السابق التي تظهر بعد البحث. وللاستخدام السلس داخل المحادثات، استخدم وضع inline.")
 
 async def do_search_and_edit(msg, query: str, start_idx: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -184,6 +185,24 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------- تشغيل البوت ----------
 
+async def send_startup_message(app):
+    """إرسال رسالة تأكيد أن البوت يعمل"""
+    try:
+        if ADMIN_ID:
+            await app.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text="✅ <b>البوت يعمل بنجاح!</b>\n\n"
+                     "🚀 تم تشغيل بوت البحث بنجاح.\n\n"
+                     "📝 استخدم <code>/search كلمة البحث</code> للبحث.\n\n"
+                     "💡 أو استخدم وضع inline: <code>@bot_username استعلام</code>",
+                parse_mode="HTML"
+            )
+            logger.info(f"✅ تم إرسال رسالة التشغيل للمسؤول ID: {ADMIN_ID}")
+        else:
+            logger.warning("⚠️ ADMIN_ID غير مضبوط. لن يتم إرسال رسالة التشغيل.")
+    except Exception as e:
+        logger.error(f"❌ خطأ في إرسال رسالة التشغيل: {e}")
+
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
@@ -193,7 +212,14 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    logger.info("Google-like Search bot (with pagination & inline) starting...")
+    logger.info("✅ البوت جاهز للتشغيل...")
+    logger.info("🚀 Google-like Search bot (with pagination & inline) starting...")
+    
+    # إرسال رسالة التشغيل
+    async def on_startup():
+        await send_startup_message(app)
+    
+    app.post_init = on_startup
     app.run_polling()
 
 
