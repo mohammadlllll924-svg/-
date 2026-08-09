@@ -107,7 +107,7 @@ class Game:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "أهلاً! هذه لعبة بديلة لجواكر. ادعُ أصدقائك إلى مجموعة، ثم استخدم /join للانضمام، و /startgame لبدء اللعبة. اكتب /help للمزيد."
+        "أهلاً! هذه لعبة بديلة لجواكر. ادعُ أصدقائك إلى مجموعة، ثم استخدم /join للانضمام، و /startgame لبدء اللعبة. اكتب /help لعرض الأوامر."
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -170,8 +170,9 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE, chat
     game.question_msg_id = msg.message_id
     game.deadline = datetime.utcnow() + timedelta(seconds=20)
 
-    # انتظر حتى انتهاء المهلة ثم أحسب النقاط
-    await asyncio.create_task(question_timer(context, chat_id, msg.message_id))
+    # جدولة التايمر في الخلفية (بدون الانتظار هنا)
+    # استخدم context.application.create_task مع python-telegram-bot v20
+    context.application.create_task(question_timer(context, chat_id, msg.message_id))
 
 async def question_timer(context: ContextTypes.DEFAULT_TYPE, chat_id: int, msg_id: int):
     await asyncio.sleep(20)
