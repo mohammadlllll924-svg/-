@@ -1,10 +1,11 @@
 # Telegram Google-like Search Bot (Google Custom Search)
 
-This repository now contains a Telegram bot that performs web searches using Google Programmable Search (Custom Search JSON API) and returns the top results to the user.
+This repository now contains a Telegram bot that performs web searches using Google Programmable Search (Custom Search JSON API) and returns the top results to the user. Pagination (Next/Previous) is supported via inline buttons.
 
 Features
 - /start and /help commands
 - /search <query> -> returns top 5 results (title + snippet) with buttons linking to each result
+- Pagination: use the "التالي" / "السابق" inline buttons to navigate pages
 
 Requirements
 - Python 3.8+
@@ -24,6 +25,11 @@ Setup
    export GOOGLE_CX="your-google-cx"
    python bot.py
 
+Usage
+- Send: /search latest news
+- In reply you'll get top results and buttons to open each link.
+- Use "التالي" and "◀️ السابق" to navigate between pages.
+
 Deployment
 - The included Procfile is compatible with simple PaaS providers (Heroku, Railway):
   web: python bot.py
@@ -34,7 +40,7 @@ Security
 
 Notes & next steps
 - This is a minimal prototype. Future improvements:
-  - Pagination / more results
-  - Caching of recent queries
+  - Caching of recent queries to reduce API calls
+  - Better handling of long queries (store session state server-side instead of encoding in callback_data)
+  - Summarization of results
   - Support for inline queries
-  - Rate-limit handling and graceful retries
