@@ -3,11 +3,19 @@ import logging
 import aiohttp
 import asyncio
 from urllib.parse import quote_plus, unquote_plus
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from uuid import uuid4
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Update,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
+    InlineQueryHandler,
     ContextTypes,
 )
 
@@ -62,14 +70,13 @@ async def google_search(query: str, count: int = RESULTS_PER_PAGE, start: int = 
 # ---------- أمر البوت ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التقنية؟"
-    )
+        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التقنية؟\n\n" 
+        "يمكنك أيضاً استخدام بوت في وضع inline بكتابة @اسم_البوت <استعلام> داخل أي محادثة.")
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "الأوامر المتاحة:\n/search <query> - البحث عبر Google Custom Search وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية.\n
-ملاحظة: يمكنك التنقل بين الصفحات عبر أزرار التالي/السابق التي تظهر بعد البحث."
-    )
+        "الأوامر المتاحة:\n/search <query> - البحث عبر Google Custom Search وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية.\n\n" 
+        "ملاحظة: يمكنك التنقل بين الصفحات عبر أزرار التالي/السابق التي تظهر بعد البحث. وللاستخدام السلس داخل المحادثات استعمل inline: اكتب @اسم_البوت ثم الاستعلام.")
 
 async def do_search_and_edit(msg, query: str, start_idx: int, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -142,6 +149,39 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await do_search_and_edit(query_obj.message, query_text, start_idx=start_idx, context=context)
 
+# ---------- Inline Query handler ----------
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query_text = update.inline_query.query or ""
+    if not query_text:
+        # optional: provide a hint or empty list
+        await update.inline_query.answer([], cache_time=1)
+        return
+
+    try:
+        results, total = await google_search(query_text, count=5, start=1)
+    except Exception as e:
+        logger.exception(e)
+        await update.inline_query.answer([], cache_time=1)
+        return
+
+    items = []
+    for r in results:
+        title = r.get("name") or r.get("url")
+        snippet = r.get("snippet") or ""
+        url = r.get("url") or ""
+        msg_text = f"{title}\n{snippet}\n{url}"
+        input_content = InputTextMessageContent(msg_text, parse_mode="HTML")
+        item = InlineQueryResultArticle(
+            id=str(uuid4()),
+            title=title,
+            input_message_content=input_content,
+            description=snippet,
+            url=url,
+        )
+        items.append(item)
+
+    await update.inline_query.answer(items, cache_time=300, is_personal=False)
+
 # ---------- تشغيل البوت ----------
 
 def main():
@@ -151,8 +191,9 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("search", search_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(InlineQueryHandler(inline_query_handler))
 
-    logger.info("Google-like Search bot (with pagination) starting...")
+    logger.info("Google-like Search bot (with pagination & inline) starting...")
     app.run_polling()
 
 
