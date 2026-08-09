@@ -26,19 +26,19 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GOOGLE_CX = os.environ.get("GOOGLE_CX")
-ADMIN_ID = os.environ.get("ADMIN_ID")  # معرف المسؤول لتلقي رسالة البداية
+ADMIN_ID = os.environ.get("ADMIN_ID")
 
 if not TELEGRAM_TOKEN:
-    logger.error("لم يتم العثور على متغير البيئة TELEGRAM_TOKEN. عيّن TELEGRAM_TOKEN ثم أعد التشغيل.")
+    logger.error("لم يتم العثور على متغير البيئة TELEGRAM_TOKEN")
     raise SystemExit(1)
 
 if not GOOGLE_API_KEY or not GOOGLE_CX:
-    logger.warning("GOOGLE_API_KEY أو GOOGLE_CX غير مضبوطين. أوامر البحث ستفشل حتى تضيف المفاتيح.")
+    logger.warning("GOOGLE_API_KEY أو GOOGLE_CX غير مضبوطين")
 
 GOOGLE_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 RESULTS_PER_PAGE = 5
 
-# ---------- مساعدة في استدعاء Google Custom Search ----------
+# ---------- Google Custom Search ----------
 async def google_search(query: str, count: int = RESULTS_PER_PAGE, start: int = 1):
     if not GOOGLE_API_KEY or not GOOGLE_CX:
         raise RuntimeError("GOOGLE_API_KEY or GOOGLE_CX is not set")
@@ -52,9 +52,8 @@ async def google_search(query: str, count: int = RESULTS_PER_PAGE, start: int = 
     }
     async with aiohttp.ClientSession() as session:
         async with session.get(GOOGLE_ENDPOINT, params=params, timeout=15) as resp:
-            text = await resp.text()
             if resp.status != 200:
-                logger.error("Google CSE API error %s: %s", resp.status, text)
+                logger.error("Google CSE API error %s", resp.status)
                 raise RuntimeError(f"Google CSE returned {resp.status}")
             data = await resp.json()
 
@@ -68,31 +67,36 @@ async def google_search(query: str, count: int = RESULTS_PER_PAGE, start: int = 
     total_results = int(data.get("searchInformation", {}).get("totalResults", 0))
     return results, total_results
 
-# ---------- أمر البوت ----------
+# ---------- الأوامر ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التكنولوجيا\n\n"
-        "يمكنك أيضاً استخدام بوت في وضع inline بكتابة @اسم_البوت <استعلام> داخل أي محادثة.")
+        "أهلاً! هذا بوت بحث شبيه بجوجل.\n\n"
+        "استخدم /search <سؤال> للبحث\n\n"
+        "مثال: /search ما هي أحدث أخبار التكنولوجيا"
+    )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "الأوامر المتاحة:\n/search <query> - البحث عبر Google Custom Search وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية.\n\n" 
-        "ملاحظة: يمكنك التنقل بين الصفحات عبر أزرار التالي/السابق التي تظهر بعد البحث. وللاستخدام السلس داخل المحادثات، استخدم وضع inline.")
+        "الأوامر:\n"
+        "/search <query> - البحث\n"
+        "/start - البداية\n"
+        "/help - المساعدة"
+    )
 
 async def do_search_and_edit(msg, query: str, start_idx: int, context: ContextTypes.DEFAULT_TYPE):
     try:
         results, total = await google_search(query, count=RESULTS_PER_PAGE, start=start_idx)
     except Exception as e:
         logger.exception(e)
-        await msg.edit_text("حدث خطأ أثناء البحث. تأكد من ضبط GOOGLE_API_KEY و GOOGLE_CX وصلاحية الشبكة.")
+        await msg.edit_text("حدث خطأ في البحث")
         return
 
     if not results:
-        await msg.edit_text("لم تُرجع نتائج.")
+        await msg.edit_text("لم تُرجع نتائج")
         return
 
     page_num = (start_idx - 1) // RESULTS_PER_PAGE + 1
-    text = f"نتائج البحث عن: <b>{query}</b> — صفحة {page_num}\n\n"
+    text = f"النتائج: <b>{query}</b> - صفحة {page_num}\n\n"
     buttons = []
     for i, r in enumerate(results, start=1 + start_idx - 1):
         name = r.get("name") or r.get("url")
@@ -118,7 +122,6 @@ async def do_search_and_edit(msg, query: str, start_idx: int, context: ContextTy
     await msg.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
 
 async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # استخراج الاستعلام وبدء الصفحات (start)
     if context.args:
         query = " ".join(context.args).strip()
     else:
@@ -127,10 +130,10 @@ async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = parts[1].strip() if len(parts) > 1 else ""
 
     if not query:
-        await update.message.reply_text("الرجاء وضع نص البحث بعد الأمر. مثال: /search كرة القدم")
+        await update.message.reply_text("مثال: /search كرة القدم")
         return
 
-    msg = await update.message.reply_text(f"جارٍ البحث عن: {query} ...")
+    msg = await update.message.reply_text(f"جارٍ البحث عن: {query}...")
     await do_search_and_edit(msg, query, start_idx=1, context=context)
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,15 +149,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             query_text = unquote_plus(enc_q)
         except Exception as e:
             logger.exception(e)
-            await query_obj.edit_message_text("حدث خطأ بمعالجة الطلب.")
+            await query_obj.edit_message_text("خطأ في الطلب")
             return
         await do_search_and_edit(query_obj.message, query_text, start_idx=start_idx, context=context)
 
-# ---------- Inline Query handler ----------
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_text = update.inline_query.query or ""
     if not query_text:
-        # optional: provide a hint or empty list
         await update.inline_query.answer([], cache_time=1)
         return
 
@@ -185,43 +186,40 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # ---------- تشغيل البوت ----------
 
-async def send_startup_message(app):
-    """إرسال رسالة تأكيد أن البوت يعمل"""
-    try:
-        if ADMIN_ID:
+async def post_init(app):
+    """تشغيل عند بدء البوت"""
+    logger.info("=" * 50)
+    logger.info("✅ البوت يعمل الآن!")
+    logger.info("=" * 50)
+    
+    # إرسال رسالة للمسؤول
+    if ADMIN_ID:
+        try:
             await app.bot.send_message(
                 chat_id=int(ADMIN_ID),
-                text="✅ <b>البوت يعمل بنجاح!</b>\n\n"
-                     "🚀 تم تشغيل بوت البحث بنجاح.\n\n"
-                     "📝 استخدم <code>/search كلمة البحث</code> للبحث.\n\n"
-                     "💡 أو استخدم وضع inline: <code>@bot_username استعلام</code>",
-                parse_mode="HTML"
+                text="✅ <b>البوت يعمل الآن!</b>\n\n"
+                     "🚀 تم تشغيل البوت بنجاح\n"
+                     "استخدم /search للبحث"
             )
-            logger.info(f"✅ تم إرسال رسالة التشغيل للمسؤول ID: {ADMIN_ID}")
-        else:
-            logger.warning("⚠️ ADMIN_ID غير مضبوط. لن يتم إرسال رسالة التشغيل.")
-    except Exception as e:
-        logger.error(f"❌ خطأ في إرسال رسالة التشغيل: {e}")
+            logger.info(f"✅ تم إرسال رسالة للمسؤول {ADMIN_ID}")
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الرسالة: {e}")
 
 def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
+    
+    # تسجيل الأوامر
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("search", search_cmd))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(InlineQueryHandler(inline_query_handler))
-
-    logger.info("✅ البوت جاهز للتشغيل...")
-    logger.info("🚀 Google-like Search bot (with pagination & inline) starting...")
     
-    # إرسال رسالة التشغيل
-    async def on_startup():
-        await send_startup_message(app)
+    # تعيين دالة التهيئة
+    app.post_init = post_init
     
-    app.post_init = on_startup
+    logger.info("🚀 جاري تشغيل البوت...")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
