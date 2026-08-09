@@ -9,63 +9,62 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_NONE = None
-
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BING_API_KEY = os.environ.get("BING_API_KEY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+GOOGLE_CX = os.environ.get("GOOGLE_CX")
 
 if not TELEGRAM_TOKEN:
     logger.error("لم يتم العثور على متغير البيئة TELEGRAM_TOKEN. عيّن TELEGRAM_TOKEN ثم أعد التشغيل.")
     raise SystemExit(1)
 
-if not BING_API_KEY:
-    logger.warning("لم يتم العثور على متغير البيئة BING_API_KEY. أوامر البحث ستفشل حتى تضيف المفتاح.")
+if not GOOGLE_API_KEY or not GOOGLE_CX:
+    logger.warning("GOOGLE_API_KEY أو GOOGLE_CX غير مضبوطين. أوامر البحث ستفشل حتى تضيف المفاتيح.")
 
-BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+GOOGLE_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
 
-# ---------- مساعدة في استدعاء Bing ----------
-async def bing_search(query: str, count: int = 5):
-    if not BING_API_KEY:
-        raise RuntimeError("BING_API_KEY is not set")
-    headers = {
-        "Ocp-Apim-Subscription-Key": BING_API_KEY,
-        "User-Agent": "TelegramSearchBot/1.0",
+# ---------- مساعدة في استدعاء Google Custom Search ----------
+async def google_search(query: str, count: int = 5):
+    if not GOOGLE_API_KEY or not GOOGLE_CX:
+        raise RuntimeError("GOOGLE_API_KEY or GOOGLE_CX is not set")
+
+    params = {
+        "key": GOOGLE_API_KEY,
+        "cx": GOOGLE_CX,
+        "q": query,
+        "num": str(count),
     }
-    params = {"q": query, "count": str(count), "textDecorations": "true", "textFormat": "HTML"}
     async with aiohttp.ClientSession() as session:
-        async with session.get(BING_ENDPOINT, headers=headers, params=params, timeout=10) as resp:
+        async with session.get(GOOGLE_ENDPOINT, params=params, timeout=10) as resp:
+            text = await resp.text()
             if resp.status != 200:
-                text = await resp.text()
-                logger.error("Bing API error %s: %s", resp.status, text)
-                raise RuntimeError(f"Bing API returned {resp.status}")
+                logger.error("Google CSE API error %s: %s", resp.status, text)
+                raise RuntimeError(f"Google CSE returned {resp.status}")
             data = await resp.json()
-    # نتوقع webPages.value
+
     results = []
-    web = data.get("webPages", {}).get("value", [])
-    for item in web:
+    for item in data.get("items", []):
         results.append({
-            "name": item.get("name"),
+            "name": item.get("title"),
             "snippet": item.get("snippet"),
-            "url": item.get("url"),
+            "url": item.get("link"),
         })
     return results
 
 # ---------- أمر البوت ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "أهلاً! هذا بوت بحث بسيط. استخدم /search <سؤال> لإجراء بحث ويب. مثال: /search ما هي أحدث أخبار التقنية؟"
+        "أهلاً! هذا بوت بحث شبيه بجوجل. استخدم /search <سؤال> لإجراء بحث ويب عبر Google Custom Search. مثال: /search ما هي أحدث أخبار التقنية؟"
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "الأوامر المتاحة:\n/search <query> - البحث على الويب وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية."
+        "الأوامر المتاحة:\n/search <query> - البحث عبر Google Custom Search وإرجاع النتائج العلوية.\n/start - رسالة ترحيبية."
     )
 
 async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         query = " ".join(context.args).strip()
     else:
-        # حاول أخذ النص بعد الأمر إن لم توجد args
         txt = update.message.text or ""
         parts = txt.split(" ", 1)
         query = parts[1].strip() if len(parts) > 1 else ""
@@ -77,10 +76,10 @@ async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(f"جارٍ البحث عن: {query} ...")
 
     try:
-        results = await bing_search(query, count=5)
+        results = await google_search(query, count=5)
     except Exception as e:
         logger.exception(e)
-        await msg.edit_text("حدث خطأ أثناء البحث. تأكد من ضبط BING_API_KEY وصلاحية الشبكة.")
+        await msg.edit_text("حدث خطأ أثناء البحث. تأكد من ضبط GOOGLE_API_KEY و GOOGLE_CX وصلاحية الشبكة.")
         return
 
     if not results:
@@ -94,11 +93,9 @@ async def search_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         snippet = r.get("snippet") or ""
         url = r.get("url") or ""
         text += f"{i}. {name}\n{snippet}\n\n"
-        # لكل نتيجة زر يفتح الرابط
         if url:
             buttons.append([InlineKeyboardButton(str(i), url=url)])
 
-    # زر لفتح جميع النتائج في نافذة (غير ممكن في تليجرام مباشرة)، لذا نقدم أزرار فردية
     reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
 
     await msg.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
@@ -112,7 +109,7 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("search", search_cmd))
 
-    logger.info("Search bot starting...")
+    logger.info("Google-like Search bot starting...")
     app.run_polling()
 
 
